@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Midori Kiosk Mode for WS-2
+Type=Application
+Exec=midori -e Fullscreen -a http://google.com/ -i 28800
+Terminal=false
+

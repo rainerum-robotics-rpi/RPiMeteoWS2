@@ -1,0 +1,110 @@
+# DO NOT CHANGE FOLLOWING LINES!
+CONFIG=/boot/config.txt
+
+set_config_var() {
+  lua - "$1" "$2" "$3" <<EOF > "$3.bak"
+local key=assert(arg[1])
+local value=assert(arg[2])
+local fn=assert(arg[3])
+local file=assert(io.open(fn))
+local made_change=false
+for line in file:lines() do
+  if line:match("^#?%s*"..key.."=.*$") then
+    line=key.."="..value
+    made_change=true
+  end
+  print(line)
+end
+if not made_change then
+  print(key.."="..value)
+end
+EOF
+mv "$3.bak" "$3"
+}
+
+clear_config_var() {
+  lua - "$1" "$2" <<EOF > "$2.bak"
+local key=assert(arg[1])
+local fn=assert(arg[2])
+local file=assert(io.open(fn))
+for line in file:lines() do
+  if line:match("^%s*"..key.."=.*$") then
+    line="#"..line
+  end
+  print(line)
+end
+EOF
+mv "$2.bak" "$2"
+}
+
+get_config_var() {
+  lua - "$1" "$2" <<EOF
+local key=assert(arg[1])
+local fn=assert(arg[2])
+local file=assert(io.open(fn))
+local found=false
+for line in file:lines() do
+  local val = line:match("^%s*"..key.."=(.*)$")
+  if (val ~= nil) then
+    print(val)
+    found=true
+    break
+  end
+end
+if not found then
+   print(0)
+end
+EOF
+}
+
+#Guess what?
+runAsRoot() {
+  sudo bash -c ". $BASH_SOURCE; $1 ${@: +2}"
+}
+
+do_resolution() {
+  CMODE=$(get_config_var hdmi_mode $CONFIG)
+  CGROUP=$(get_config_var hdmi_group $CONFIG)
+  if [ $CMODE -eq 0 ] ; then
+    CSET="Default"
+  elif [ $CGROUP -eq 2 ] ; then
+    CSET="DMT Mode "$CMODE
+  else
+    CSET="CEA Mode "$CMODE
+  fi
+  oIFS="$IFS"
+  IFS="/"
+  value="Default/Monitor preferred resolution/"
+  value=$value$(tvservice -m CEA | grep progressive | cut -b 12- | sed 's/mode \([0-9]\+\): \([0-9]\+\)x\([0-9]\+\) @ \([0-9]\+\)Hz \([0-9]\+\):\([0-9]\+\), clock:[0-9]\+MHz progressive/CEA Mode \1\/\2x\3 \4Hz \5:\6/' | tr '\n' '/')
+  value=$value$(tvservice -m DMT | grep progressive | cut -b 12- | sed 's/mode \([0-9]\+\): \([0-9]\+\)x\([0-9]\+\) @ \([0-9]\+\)Hz \([0-9]\+\):\([0-9]\+\), clock:[0-9]\+MHz progressive/DMT Mode \1\/\2x\3 \4Hz \5:\6/' | tr '\n' '/')
+  RES=$(whiptail --default-item $CSET --menu "Choose screen resolution" 20 60 10 ${value} 3>&1 1>&2 2>&3)
+  STATUS=$?
+  IFS=$oIFS
+  if [ $STATUS -eq 0 ] ; then
+    GRS=$(echo "$RES" | cut -d ' ' -f 1)
+    MODE=$(echo "$RES" | cut -d ' ' -f 3)
+    if [ $GRS = "Default" ] ; then
+      MODE=0
+    elif [ $GRS = "DMT" ] ; then
+      GROUP=2
+    else
+      GROUP=1
+    fi
+  fi
+  if [ $STATUS -eq 0 ]; then
+    if [ $MODE -eq 0 ]; then
+      clear_config_var hdmi_force_hotplug $CONFIG
+      clear_config_var hdmi_group $CONFIG
+      clear_config_var hdmi_mode $CONFIG
+    else
+      set_config_var hdmi_force_hotplug 1 $CONFIG
+      set_config_var hdmi_group $GROUP $CONFIG
+      set_config_var hdmi_mode $MODE $CONFIG
+    fi
+    if [ $MODE -eq 0 ] ; then
+      whiptail --msgbox "The resolution is set to default" 20 60 1
+    else
+      whiptail --msgbox "The resolution is set to $GRS mode $MODE" 20 60 1
+    fi
+  fi
+}

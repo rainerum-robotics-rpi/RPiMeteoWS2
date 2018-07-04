@@ -1,0 +1,7 @@
+[Unit]
+Description=simulate user activity for xscreensaver
+
+[Service]
+Type=oneshot
+Environment="DISPLAY=:0"
+ExecStart=/usr/bin/xscreensaver-command -deactivate
